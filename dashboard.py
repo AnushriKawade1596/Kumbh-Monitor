@@ -31,7 +31,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # Constants & Unified Taxonomy Definition
 # ---------------------------------------------------------------------------
-DATA_PATH = "data_pipeline/articles_export_clean.csv" if os.path.exists("data_pipeline/articles_export_clean.csv") else "articles_export_clean.csv"
+DATA_PATH = "articles_with_taxonomy.csv" if os.path.exists("articles_with_taxonomy.csv") else "data_pipeline/articles_export_clean.csv"
 
 TOPIC_CATEGORIES = [
     "Infrastructure", 
@@ -143,6 +143,38 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
+/* Mobile viewport fix - add this */
+@media (max-width: 768px) {
+    .stApp {
+        overflow-x: hidden !important;
+    }
+    .main .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        max-width: 100% !important;
+    }
+@media screen and (max-width: 768px) {
+    /* Make sidebar collapsible by default on mobile */
+    section[data-testid="stSidebar"][aria-expanded="true"] {
+        width: 85% !important;
+        max-width: 280px !important;
+    }
+    
+    /* Sidebar overlay effect */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        margin-left: -280px !important;
+    }
+}
+@media screen and (max-width: 768px) {
+    [data-testid="stDataFrameResizable"] {
+        overflow-x: auto !important;
+    }
+    
+    .stDataFrame {
+        width: 100% !important;
+        overflow-x: scroll !important;
+    }
+}
 html, body, [data-testid="stAppViewContainer"], .stApp {
     font-family: 'Outfit', sans-serif;
     background: linear-gradient(135deg, #070710 0%, #0d0d26 50%, #150e2c 100%);
@@ -345,6 +377,134 @@ h3 {
     font-size: 0.85rem; 
     text-align: center;
 }
+
+/* ============================================ */
+/* MOBILE RESPONSIVENESS ADDITIONS */
+/* ============================================ */
+
+/* Tablet & Mobile Devices */
+@media screen and (max-width: 768px) {
+    /* Smaller headers */
+    h1 {
+        font-size: 1.8rem !important;
+        text-align: center;
+    }
+    
+    h2 {
+        font-size: 1.3rem !important;
+    }
+    
+    h3 {
+        font-size: 1.1rem !important;
+    }
+    
+    /* Metric cards - 2 per row on mobile */
+    .metric-card {
+        padding: 0.75rem 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .metric-icon {
+        font-size: 24px !important;
+    }
+    
+    .metric-value {
+        font-size: 1.6rem !important;
+    }
+    
+    .metric-label {
+        font-size: 0.7rem !important;
+    }
+    
+    /* Stack columns vertically on mobile */
+    .stColumns {
+        flex-direction: column !important;
+    }
+    
+    /* Article cards */
+    .article-card {
+        padding: 0.75rem !important;
+    }
+    
+    /* Insight boxes */
+    .insight-box {
+        padding: 0.75rem !important;
+        font-size: 0.85rem !important;
+    }
+    
+    /* Conclusion cards */
+    .conclusion-card {
+        padding: 1rem !important;
+    }
+    
+    /* Tab navigation - make scrollable on mobile */
+    .stTabs [data-baseweb="tab-list"] {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        flex: 0 0 auto !important;
+        font-size: 0.8rem !important;
+        padding: 0 12px !important;
+        height: 40px !important;
+    }
+    
+    /* Sidebar - full width on mobile */
+    section[data-testid="stSidebar"] {
+        width: 100% !important;
+    }
+    
+    /* Hide sidebar toggle text on mobile */
+    .stSidebar [data-testid="stSidebarCollapseButton"] {
+        display: none !important;
+    }
+    
+    /* Footer */
+    .footer {
+        font-size: 0.7rem !important;
+        margin-top: 2rem !important;
+    }
+    
+    /* Buttons */
+    .stButton>button, .stDownloadButton>button {
+        width: 100% !important;
+        font-size: 0.85rem !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
+    /* Charts - ensure they don't overflow */
+    .js-plotly-plot, .plotly-graph-div {
+        width: 100% !important;
+    }
+}
+@media screen and (max-width: 768px) {
+    div[data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+}
+/* Small phones (max-width: 480px) */
+@media screen and (max-width: 480px) {
+    h1 {
+        font-size: 1.5rem !important;
+    }
+    
+    .metric-value {
+        font-size: 1.3rem !important;
+    }
+    
+    .metric-icon {
+        font-size: 20px !important;
+    }
+    
+    .insight-box {
+        font-size: 0.8rem !important;
+    }
+}
 </style>
     """,
     unsafe_allow_html=True,
@@ -512,15 +672,87 @@ def load_data(path: str) -> pd.DataFrame:
         st.error(f"❌ Data file not found at `{path}`")
         st.stop()
     df = pd.read_csv(path)
+    
     df["publish_date"] = pd.to_datetime(df["publish_date"], errors="coerce")
     df = df.dropna(subset=["publish_date"])
     
-    # NLP enrichment execution
-    df = enrich_with_ai(df)
-
+    # ============================================
+    # CREATE extracted_topic FROM ml_themes
+    # ============================================
+    def extract_topic_from_themes(themes_str):
+        """Extract primary topic from ml_themes JSON string"""
+        if pd.isna(themes_str) or themes_str == "[]" or themes_str == "":
+            return "General"
+        try:
+            themes = json.loads(themes_str)
+            if not themes:
+                return "General"
+            first_theme = themes[0]
+            clean_topic = first_theme.replace('theme.', '').replace('_', ' ').title()
+            topic_map = {
+                'roads bridges': 'Infrastructure',
+                'sanitation infra': 'Infrastructure',
+                'power lighting': 'Infrastructure',
+                'connectivity network': 'Infrastructure',
+                'transport systems': 'Infrastructure',
+                'ghats river works': 'Infrastructure',
+                'epidemic surveillance': 'Health',
+                'medical response': 'Health',
+                'mental health': 'Health',
+                'community kitchens': 'Food & Water',
+                'food safety': 'Food & Water',
+                'water supply': 'Food & Water',
+                'crowd management': 'Crowd & Safety',
+                'incident response': 'Crowd & Safety',
+                'policing security': 'Crowd & Safety',
+                'lost found': 'Crowd & Safety',
+                'river health': 'Environment',
+                'waste management': 'Environment',
+                'air climate': 'Environment',
+                'shahi snan': 'Spiritual & Cultural',
+                'akhada activity': 'Spiritual & Cultural',
+                'rituals ceremonies': 'Spiritual & Cultural',
+                'heritage culture': 'Spiritual & Cultural',
+                'apps platforms': 'Technology',
+                'ai analytics': 'Technology',
+                'sensors drones': 'Technology',
+                'policy planning': 'Governance & Economy',
+                'budget spending': 'Governance & Economy',
+                'economy commerce': 'Governance & Economy',
+                'rumors misinfo': 'Information & Truth',
+                'fact checks': 'Information & Truth',
+                'pilgrim experience': 'People & Experience',
+                'volunteers ngos': 'People & Experience',
+            }
+            for key, category in topic_map.items():
+                if key in clean_topic.lower():
+                    return category
+            return clean_topic.split()[0] if clean_topic else "General"
+        except (json.JSONDecodeError, AttributeError, IndexError):
+            return "General"
+    
+    df['extracted_topic'] = df['ml_themes'].apply(extract_topic_from_themes)
+    
+    # ============================================
+    # PARSE ALL ML COLUMNS
+    # ============================================
+    # Parse ml_themes as lists
+    df['ml_themes'] = df['ml_themes'].apply(lambda x: json.loads(x) if isinstance(x, str) and x else [])
+    
+    # Ensure numeric columns are proper numbers
+    for col in ['viz_x', 'viz_y', 'risk_score', 'ml_cluster_id']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    
+    # Convert ml_cluster_id to int
+    if 'ml_cluster_id' in df.columns:
+        df['ml_cluster_id'] = df['ml_cluster_id'].astype(int)
+    
+    # Calculate phase (Before/During/After)
     df["phase"] = df["publish_date"].apply(calculate_phase)
     df["year"] = df["publish_date"].dt.year
     df["month_year"] = df["publish_date"].dt.to_period("M").dt.to_timestamp()
+    
     return df
 
 
@@ -633,11 +865,18 @@ def generate_insights(filtered_df: pd.DataFrame) -> list:
 # ---------------------------------------------------------------------------
 df = load_data(DATA_PATH)
 
-has_ml_risk = df["risk_band"].nunique() > 1 or (df["risk_band"] != "unknown").any()
-has_ml_clusters = (df["ml_cluster_id"] != -1).any()
-has_ml_temporal = (df["ml_temporal_phase"] != "unknown").any()
-has_ml_event = (df["ml_event_type"] != "unknown").any()
-has_viz = (df["viz_x"] != 0).any() or (df["viz_y"] != 0).any()
+# has_ml_risk = df["risk_band"].nunique() > 1 or (df["risk_band"] != "unknown").any()
+# has_ml_clusters = (df["ml_cluster_id"] != -1).any()
+# has_ml_temporal = (df["ml_temporal_phase"] != "unknown").any()
+# has_ml_event = (df["ml_event_type"] != "unknown").any()
+# has_viz = (df["viz_x"] != 0).any() or (df["viz_y"] != 0).any()
+
+# ML Feature Detection (after data is loaded)
+has_ml_risk = 'risk_band' in df.columns and df["risk_band"].nunique() > 1
+has_ml_clusters = 'ml_cluster_id' in df.columns and (df["ml_cluster_id"] != -1).any()
+has_ml_temporal = 'ml_temporal_phase' in df.columns and (df["ml_temporal_phase"] != "unknown").any()
+has_ml_event = 'ml_event_type' in df.columns and (df["ml_event_type"] != "unknown").any()
+has_viz = 'viz_x' in df.columns and (df["viz_x"] != 0).any()
 
 # ---------------------------------------------------------------------------
 # Sidebar Filters (Supporting Full 10-Topic Taxonomy)
@@ -749,6 +988,9 @@ tab_overview, tab_deepdive, tab_timeline, tab_risk, tab_predictive, tab_explorer
 # ===========================================================================
 # TAB 1: EXECUTIVE OVERVIEW
 # ===========================================================================
+# ===========================================================================
+# TAB 1: EXECUTIVE OVERVIEW
+# ===========================================================================
 with tab_overview:
     # 5 KPI Metric Cards
     n_articles = len(filtered_df)
@@ -757,9 +999,10 @@ with tab_overview:
     years_cov = int(filtered_df["year"].max() - filtered_df["year"].min() + 1) if n_articles > 0 else 0
     avg_risk = float(filtered_df["risk_score"].mean()) if n_articles > 0 else 0.0
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    
-    with c1:
+    # Create 5 columns for KPI metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
         st.markdown(
             f"""
             <div class="metric-card">
@@ -769,7 +1012,8 @@ with tab_overview:
             </div>
             """, unsafe_allow_html=True
         )
-    with c2:
+
+    with col2:
         st.markdown(
             f"""
             <div class="metric-card">
@@ -779,7 +1023,8 @@ with tab_overview:
             </div>
             """, unsafe_allow_html=True
         )
-    with c3:
+
+    with col3:
         st.markdown(
             f"""
             <div class="metric-card">
@@ -789,7 +1034,8 @@ with tab_overview:
             </div>
             """, unsafe_allow_html=True
         )
-    with c4:
+
+    with col4:
         st.markdown(
             f"""
             <div class="metric-card">
@@ -799,7 +1045,8 @@ with tab_overview:
             </div>
             """, unsafe_allow_html=True
         )
-    with c5:
+
+    with col5:
         st.markdown(
             f"""
             <div class="metric-card">
@@ -901,7 +1148,6 @@ with tab_overview:
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No active articles to display phase statistics.")
-
 # ===========================================================================
 # TAB 2: THEME DEEP-DIVE & ANALYTICS (MULTIPLE VISUALS & DYNAMIC CONCLUSIONS)
 # ===========================================================================
@@ -1005,32 +1251,52 @@ with tab_deepdive:
 
         with c_vis2:
             # Visual 3: Top Media Outlets publishing under this theme
-            theme_outlets = theme_data["source"].value_counts().head(8).sort_values(ascending=True)
+            theme_outlets = theme_data["source"].value_counts().head(8).sort_values(ascending=False)
+            
             fig_outlets = px.bar(
-                x=theme_outlets.values, y=theme_outlets.index,
+                x=theme_outlets.values, 
+                y=theme_outlets.index,
                 orientation="h",
                 color=theme_outlets.values,
-                color_continuous_scale="Purples",
-                text=theme_outlets.values
+                color_continuous_scale="Viridis",
+                text=theme_outlets.values,
+                labels={"x": "Number of Articles", "y": "News Source"}
+            )
+            fig_outlets.update_traces(
+                textposition="outside",
+                textfont=dict(color="white", size=12),
+                marker=dict(line=dict(width=0))
+            )
+            fig_outlets.update_layout(
+                height=320,
+                xaxis=dict(gridcolor="rgba(255,255,255,0.1)", title="Articles"),
+                yaxis=dict(title=""),
+                showlegend=False
             )
             apply_plotly_styling(fig_outlets, title=f"📡 Top Narrators covering {active_theme}", height=320)
-            fig_outlets.update_layout(coloraxis_showscale=False, xaxis=dict(title="Articles"), yaxis=dict(title=""))
             st.plotly_chart(fig_outlets, use_container_width=True)
             
             # Visual 4: Risk Scatter Matrix specifically for this theme
-            fig_risk = px.scatter(
-                theme_data,
-                x="publish_date", y="risk_score",
-                color="risk_band",
-                hover_data=["headline", "source"],
-                color_discrete_map=RISK_COLORS,
-                category_orders={"risk_band": ["low", "medium", "high", "critical"]}
-            )
-            fig_risk.update_traces(marker=dict(size=10, opacity=0.85, line=dict(width=1, color="white")))
-            apply_plotly_styling(fig_risk, title=f"🛡️ Article Risk Forensics — {active_theme}", height=320)
-            fig_risk.update_layout(xaxis=dict(title="Publish Date"), yaxis=dict(title="Risk Rating Score", range=[-0.05, 1.05]))
-            st.plotly_chart(fig_risk, use_container_width=True)
-
+            if len(theme_data) > 0 and 'risk_band' in theme_data.columns:
+                fig_risk = px.scatter(
+                    theme_data,
+                    x="publish_date", 
+                    y="risk_score",
+                    color="risk_band",
+                    hover_data=["headline", "source"],
+                    color_discrete_map=RISK_COLORS,
+                    category_orders={"risk_band": ["low", "medium", "high", "critical"]}
+                )
+                fig_risk.update_traces(marker=dict(size=10, opacity=0.85, line=dict(width=1, color="white")))
+                fig_risk.update_layout(
+                    height=320,
+                    xaxis=dict(title="Publish Date", gridcolor="rgba(255,255,255,0.1)"),
+                    yaxis=dict(title="Risk Score", range=[-0.05, 1.05], gridcolor="rgba(255,255,255,0.1)")
+                )
+                apply_plotly_styling(fig_risk, title=f"🛡️ Article Risk Forensics — {active_theme}", height=320)
+                st.plotly_chart(fig_risk, use_container_width=True)
+            else:
+                st.info("No risk data available for this theme.")        
         # Dynamic Conclusion Block
         st.markdown(
             f"""
@@ -1102,19 +1368,25 @@ with tab_timeline:
         st.info("No active articles to display velocity timelines.")
 
     # ML Classified 7-Phase Timeline Mapping
-    if has_ml_temporal:
-        st.markdown("<h3>🎯 AI Classified 7-Phase Logistical Timeline</h3>", unsafe_allow_html=True)
-        pc_detailed = filtered_df["ml_temporal_phase"].value_counts().reindex(DETAILED_PHASES, fill_value=0)
-        
+    # ML Classified 7-Phase Timeline Mapping
+if 'has_ml_temporal' in dir() and has_ml_temporal:
+    st.markdown("<h3>🎯 AI Classified 7-Phase Logistical Timeline</h3>", unsafe_allow_html=True)
+    
+    # Get actual phases from data
+    phase_counts = filtered_df["ml_temporal_phase"].value_counts()
+    
+    if len(phase_counts) > 0:
         fig_det_phase = px.bar(
-            x=pc_detailed.values, y=pc_detailed.index, orientation="h",
-            color=pc_detailed.values, color_continuous_scale="Purples",
-            text=pc_detailed.values, height=350
+            x=phase_counts.values, y=phase_counts.index, orientation="h",
+            color=phase_counts.values, color_continuous_scale="Purples",
+            text=phase_counts.values, height=350
         )
         fig_det_phase.update_traces(textposition="outside")
         apply_plotly_styling(fig_det_phase, height=350)
         fig_det_phase.update_layout(coloraxis_showscale=False, xaxis=dict(title="Articles"), yaxis=dict(title=""))
         st.plotly_chart(fig_det_phase, use_container_width=True)
+    else:
+        st.info("No temporal phase data available for current filters.")
 
 # ===========================================================================
 # TAB 4: RISK & SECURITY
