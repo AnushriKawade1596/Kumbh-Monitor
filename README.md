@@ -52,3 +52,4 @@ Missing columns are filled with safe defaults so nothing breaks.
 - ML-enhanced charts (conditional)
 - Searchable / paginated data explorer + article-card view
 - CSV export of filtered data
+# Kumbh-Monitor
